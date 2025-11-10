@@ -2138,3 +2138,992 @@ One challenge with AI assistants is maintaining context across multi-turn conver
 We address this through conversation history management. Each interaction maintains a complete history of messages exchanged, which we include in subsequent API calls. This allows the model to reference earlier parts of the conversation when formulating responses. The history is session-based—starting a new conversation clears history, ensuring the assistant doesn't get confused by unrelated previous discussions.
 
 ---
+# StudyHub - Complete Documentation 
+
+---
+
+## 4.5 AI-Powered Study Assistant: Your Personal Tutor
+
+**Subject-Specific Optimization**
+
+Different academic subjects require different pedagogical approaches. Mathematics problems benefit from step-by-step solutions showing each transformation. History questions need context about time periods and causal relationships. Programming queries require both conceptual explanations and practical code examples.
+
+To address this, we implemented subject detection and specialized prompting:
+
+```dart
+class SubjectSpecificPrompts {
+  /// Detect subject from user query
+  static String detectSubject(String query) {
+    final lowercaseQuery = query.toLowerCase();
+    
+    // Mathematics indicators
+    if (_containsAny(lowercaseQuery, ['solve', 'equation', 'calculate', 'derivative', 'integral', 'theorem', 'proof'])) {
+      return 'mathematics';
+    }
+    
+    // Programming indicators
+    if (_containsAny(lowercaseQuery, ['code', 'program', 'function', 'algorithm', 'debug', 'syntax', 'error'])) {
+      return 'programming';
+    }
+    
+    // Science indicators
+    if (_containsAny(lowercaseQuery, ['reaction', 'element', 'molecule', 'experiment', 'hypothesis', 'theory'])) {
+      return 'science';
+    }
+    
+    // History indicators
+    if (_containsAny(lowercaseQuery, ['war', 'revolution', 'century', 'empire', 'dynasty', 'ancient', 'medieval'])) {
+      return 'history';
+    }
+    
+    // Language/Literature indicators
+    if (_containsAny(lowercaseQuery, ['grammar', 'essay', 'literature', 'poem', 'novel', 'author', 'character'])) {
+      return 'language';
+    }
+    
+    return 'general';
+  }
+  
+  /// Get subject-specific instruction suffix
+  static String getSubjectPrompt(String subject) {
+    switch (subject) {
+      case 'mathematics':
+        return '''
+For mathematical problems:
+- Show step-by-step solutions with clear reasoning at each step
+- Explain the mathematical principles being applied
+- Verify the solution and explain why it's correct
+- Suggest alternative approaches when applicable
+- Use LaTeX notation for complex equations
+''';
+      
+      case 'programming':
+        return '''
+For programming questions:
+- Explain concepts before showing code
+- Provide well-commented, clean code examples
+- Discuss time and space complexity where relevant
+- Mention common pitfalls and best practices
+- Suggest how to test and debug the code
+''';
+      
+      case 'science':
+        return '''
+For science questions:
+- Ground explanations in fundamental principles
+- Use diagrams or analogies to clarify complex processes
+- Connect concepts to real-world applications
+- Distinguish between theories and established facts
+- Encourage experimental thinking
+''';
+      
+      case 'history':
+        return '''
+For history questions:
+- Provide chronological context and timelines
+- Explain cause-and-effect relationships
+- Present multiple perspectives when relevant
+- Connect events to broader historical trends
+- Cite specific dates, places, and figures
+''';
+      
+      case 'language':
+        return '''
+For language and literature questions:
+- Explain grammar rules with clear examples
+- Analyze literary devices and their effects
+- Discuss themes and symbolism in texts
+- Provide context about authors and time periods
+- Show how language evolved or varies
+''';
+      
+      default:
+        return '';
+    }
+  }
+  
+  static bool _containsAny(String text, List<String> keywords) {
+    return keywords.any((keyword) => text.contains(keyword));
+  }
+}
+```
+
+When a user sends a message, we detect the likely subject and append appropriate instructions to the system prompt. This ensures responses follow subject-appropriate conventions—mathematical solutions include step-by-step work, programming answers include code samples, historical responses provide chronological context.
+
+**Intelligent Response Formatting**
+
+Raw AI responses are often plain text, but educational content benefits from rich formatting. We implemented a markdown renderer that processes AI responses to display:
+
+- **Headers and Subheaders**: Breaking long explanations into sections
+- **Bold and Italic Text**: Emphasizing key terms and concepts
+- **Numbered and Bulleted Lists**: Organizing steps or multiple points
+- **Code Blocks**: Syntax-highlighted programming examples
+- **Mathematical Equations**: LaTeX-rendered formulas and expressions
+- **Blockquotes**: Highlighting important definitions or theorems
+- **Tables**: Comparing multiple items or organizing data
+
+```dart
+class AIResponseRenderer extends StatelessWidget {
+  final String markdownText;
+  
+  const AIResponseRenderer({Key? key, required this.markdownText}) : super(key: key);
+  
+  @override
+  Widget build(BuildContext context) {
+    return Markdown(
+      data: markdownText,
+      styleSheet: MarkdownStyleSheet(
+        h1: Theme.of(context).textTheme.headlineMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        h2: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.bold,
+        ),
+        p: Theme.of(context).textTheme.bodyLarge,
+        code: GoogleFonts.jetBrainsMono(
+          fontSize: 14,
+          backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceVariant,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline,
+          ),
+        ),
+        blockquote: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontStyle: FontStyle.italic,
+          color: Theme.of(context).colorScheme.secondary,
+        ),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: Theme.of(context).colorScheme.primary,
+              width: 4,
+            ),
+          ),
+        ),
+        listBullet: Theme.of(context).textTheme.bodyLarge,
+      ),
+      selectable: true,
+      onTapLink: (text, href, title) {
+        if (href != null) {
+          _launchURL(href);
+        }
+      },
+    );
+  }
+  
+  void _launchURL(String url) async {
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+    }
+  }
+}
+```
+
+**Conversation Management and History**
+
+Students often need to reference previous conversations or continue discussions across sessions. We implemented a conversation persistence system:
+
+```dart
+class ConversationStorage {
+  static const String _conversationsKey = 'ai_conversations';
+  
+  /// Save conversation to local storage
+  Future<void> saveConversation(Conversation conversation) async {
+    final prefs = await SharedPreferences.getInstance();
+    final conversations = await getAllConversations();
+    
+    // Update existing or add new
+    final index = conversations.indexWhere((c) => c.id == conversation.id);
+    if (index != -1) {
+      conversations[index] = conversation;
+    } else {
+      conversations.add(conversation);
+    }
+    
+    // Serialize and save
+    final jsonList = conversations.map((c) => c.toJson()).toList();
+    await prefs.setString(_conversationsKey, json.encode(jsonList));
+  }
+  
+  /// Load all conversations
+  Future<List<Conversation>> getAllConversations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_conversationsKey);
+    
+    if (jsonString == null) return [];
+    
+    final jsonList = json.decode(jsonString) as List;
+    return jsonList.map((json) => Conversation.fromJson(json)).toList();
+  }
+  
+  /// Delete conversation
+  Future<void> deleteConversation(String conversationId) async {
+    final conversations = await getAllConversations();
+    conversations.removeWhere((c) => c.id == conversationId);
+    
+    final prefs = await SharedPreferences.getInstance();
+    final jsonList = conversations.map((c) => c.toJson()).toList();
+    await prefs.setString(_conversationsKey, json.encode(jsonList));
+  }
+  
+  /// Search conversations by keyword
+  Future<List<Conversation>> searchConversations(String query) async {
+    final conversations = await getAllConversations();
+    final lowercaseQuery = query.toLowerCase();
+    
+    return conversations.where((conversation) {
+      // Search in title
+      if (conversation.title.toLowerCase().contains(lowercaseQuery)) {
+        return true;
+      }
+      
+      // Search in messages
+      return conversation.messages.any((message) =>
+        message.content.toLowerCase().contains(lowercaseQuery)
+      );
+    }).toList();
+  }
+}
+
+class Conversation {
+  final String id;
+  final String title;
+  final DateTime createdAt;
+  final DateTime lastUpdatedAt;
+  final List<Message> messages;
+  final String? subject;
+  
+  Conversation({
+    required this.id,
+    required this.title,
+    required this.createdAt,
+    required this.lastUpdatedAt,
+    required this.messages,
+    this.subject,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'createdAt': createdAt.toIso8601String(),
+    'lastUpdatedAt': lastUpdatedAt.toIso8601String(),
+    'messages': messages.map((m) => m.toJson()).toList(),
+    'subject': subject,
+  };
+  
+  factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
+    id: json['id'],
+    title: json['title'],
+    createdAt: DateTime.parse(json['createdAt']),
+    lastUpdatedAt: DateTime.parse(json['lastUpdatedAt']),
+    messages: (json['messages'] as List)
+        .map((m) => Message.fromJson(m))
+        .toList(),
+    subject: json['subject'],
+  );
+  
+  // Generate title from first user message
+  factory Conversation.fromFirstMessage(Message firstMessage) {
+    final title = firstMessage.content.length > 50
+        ? '${firstMessage.content.substring(0, 50)}...'
+        : firstMessage.content;
+    
+    return Conversation(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      title: title,
+      createdAt: DateTime.now(),
+      lastUpdatedAt: DateTime.now(),
+      messages: [firstMessage],
+    );
+  }
+}
+```
+
+This storage system allows students to:
+- Resume previous conversations seamlessly
+- Search through conversation history
+- Organize conversations by subject
+- Export conversations for reference or submission
+
+**AI-Powered Content Summarization**
+
+Beyond the conversational assistant, StudyHub includes AI-powered summarization for documents, videos, and notes. Students can upload lengthy study materials and receive concise summaries highlighting key points.
+
+```dart
+class ContentSummarizer {
+  final _geminiApi = GeminiApi(apiKey: 'YOUR_GEMINI_API_KEY');
+  
+  /// Summarize text content
+  Future<SummaryResult> summarizeText({
+    required String content,
+    SummaryLength length = SummaryLength.medium,
+  }) async {
+    try {
+      final lengthInstruction = _getLengthInstruction(length);
+      
+      final prompt = '''
+Summarize the following content. $lengthInstruction
+
+Content:
+$content
+
+Provide a well-structured summary that:
+1. Captures the main ideas and key points
+2. Maintains logical flow and coherence
+3. Uses clear, concise language
+4. Preserves important details and examples
+5. Organizes information with headers and bullet points where appropriate
+''';
+
+      final response = await _geminiApi.generateContent(
+        model: 'gemini-pro',
+        contents: [Content(role: 'user', parts: [Part(text: prompt)])],
+        generationConfig: GenerationConfig(
+          temperature: 0.3, // Lower temperature for more focused summaries
+          maxOutputTokens: _getMaxTokens(length),
+        ),
+      );
+      
+      return SummaryResult.success(
+        summary: response.text ?? '',
+        originalLength: content.length,
+        summaryLength: response.text?.length ?? 0,
+      );
+    } catch (e) {
+      return SummaryResult.error(message: e.toString());
+    }
+  }
+  
+  /// Summarize PDF document
+  Future<SummaryResult> summarizePDF(File pdfFile) async {
+    try {
+      // Extract text from PDF
+      final pdfText = await _extractTextFromPDF(pdfFile);
+      
+      if (pdfText.isEmpty) {
+        return SummaryResult.error(message: 'Could not extract text from PDF');
+      }
+      
+      // Summarize extracted text
+      return await summarizeText(content: pdfText);
+    } catch (e) {
+      return SummaryResult.error(message: e.toString());
+    }
+  }
+  
+  /// Generate key points from content
+  Future<List<String>> extractKeyPoints(String content) async {
+    final prompt = '''
+Extract 5-10 key points from the following content. Present each point as a clear, concise statement.
+
+Content:
+$content
+
+Format your response as a numbered list of key points.
+''';
+
+    final response = await _geminiApi.generateContent(
+      model: 'gemini-pro',
+      contents: [Content(role: 'user', parts: [Part(text: prompt)])],
+    );
+    
+    // Parse numbered list from response
+    final text = response.text ?? '';
+    final lines = text.split('\n');
+    final keyPoints = <String>[];
+    
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty && RegExp(r'^\d+\.').hasMatch(trimmed)) {
+        keyPoints.add(trimmed.replaceFirst(RegExp(r'^\d+\.\s*'), ''));
+      }
+    }
+    
+    return keyPoints;
+  }
+  
+  String _getLengthInstruction(SummaryLength length) {
+    switch (length) {
+      case SummaryLength.brief:
+        return 'Create a brief summary in 2-3 concise paragraphs.';
+      case SummaryLength.medium:
+        return 'Create a comprehensive summary in 4-6 paragraphs.';
+      case SummaryLength.detailed:
+        return 'Create a detailed summary preserving important details and examples.';
+    }
+  }
+  
+  int _getMaxTokens(SummaryLength length) {
+    switch (length) {
+      case SummaryLength.brief:
+        return 256;
+      case SummaryLength.medium:
+        return 512;
+      case SummaryLength.detailed:
+        return 1024;
+    }
+  }
+  
+  Future<String> _extractTextFromPDF(File pdfFile) async {
+    // Use pdf_text or similar package to extract text
+    final bytes = await pdfFile.readAsBytes();
+    final document = await PdfDocument.openData(bytes);
+    
+    final textBuffer = StringBuffer();
+    for (var i = 0; i < document.pagesCount; i++) {
+      final page = await document.getPage(i);
+      final text = await page.text;
+      textBuffer.writeln(text);
+    }
+    
+    return textBuffer.toString();
+  }
+}
+
+enum SummaryLength { brief, medium, detailed }
+
+class SummaryResult {
+  final bool success;
+  final String? summary;
+  final int? originalLength;
+  final int? summaryLength;
+  final String? errorMessage;
+  
+  const SummaryResult._({
+    required this.success,
+    this.summary,
+    this.originalLength,
+    this.summaryLength,
+    this.errorMessage,
+  });
+  
+  factory SummaryResult.success({
+    required String summary,
+    required int originalLength,
+    required int summaryLength,
+  }) {
+    return SummaryResult._(
+      success: true,
+      summary: summary,
+      originalLength: originalLength,
+      summaryLength: summaryLength,
+    );
+  }
+  
+  factory SummaryResult.error({required String message}) {
+    return SummaryResult._(
+      success: false,
+      errorMessage: message,
+    );
+  }
+  
+  double get compressionRatio {
+    if (originalLength == null || summaryLength == null) return 0.0;
+    return summaryLength! / originalLength!;
+  }
+}
+```
+
+**AI Question Generation**
+
+To facilitate active recall and test preparation, StudyHub can generate practice questions from study material:
+
+```dart
+class QuestionGenerator {
+  final _geminiApi = GeminiApi(apiKey: 'YOUR_GEMINI_API_KEY');
+  
+  /// Generate questions from content
+  Future<List<GeneratedQuestion>> generateQuestions({
+    required String content,
+    required QuestionType type,
+    int count = 10,
+  }) async {
+    try {
+      final typeInstruction = _getTypeInstruction(type);
+      
+      final prompt = '''
+Generate $count ${type.name} questions based on the following content. $typeInstruction
+
+Content:
+$content
+
+Format each question as JSON with the following structure:
+{
+  "question": "The question text",
+  "options": ["option1", "option2", "option3", "option4"], // For MCQ only
+  "correctAnswer": "The correct answer",
+  "explanation": "Brief explanation of why this is correct"
+}
+
+Provide the questions as a JSON array.
+''';
+
+      final response = await _geminiApi.generateContent(
+        model: 'gemini-pro',
+        contents: [Content(role: 'user', parts: [Part(text: prompt)])],
+        generationConfig: GenerationConfig(
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+        ),
+      );
+      
+      // Parse JSON response
+      final text = response.text ?? '';
+      final jsonMatch = RegExp(r'\[.*\]', dotAll: true).firstMatch(text);
+      
+      if (jsonMatch == null) {
+        throw Exception('Invalid response format');
+      }
+      
+      final jsonArray = json.decode(jsonMatch.group(0)!) as List;
+      return jsonArray
+          .map((q) => GeneratedQuestion.fromJson(q))
+          .toList();
+    } catch (e) {
+      throw Exception('Failed to generate questions: $e');
+    }
+  }
+  
+  String _getTypeInstruction(QuestionType type) {
+    switch (type) {
+      case QuestionType.multipleChoice:
+        return 'Each question should have 4 options with one correct answer.';
+      case QuestionType.trueFalse:
+        return 'Each question should be a true/false statement.';
+      case QuestionType.shortAnswer:
+        return 'Each question should require a brief written response.';
+      case QuestionType.fillInBlank:
+        return 'Each question should have a blank to be filled with the correct term.';
+    }
+  }
+}
+
+enum QuestionType {
+  multipleChoice,
+  trueFalse,
+  shortAnswer,
+  fillInBlank,
+}
+
+class GeneratedQuestion {
+  final String question;
+  final List<String>? options;
+  final String correctAnswer;
+  final String explanation;
+  
+  const GeneratedQuestion({
+    required this.question,
+    this.options,
+    required this.correctAnswer,
+    required this.explanation,
+  });
+  
+  factory GeneratedQuestion.fromJson(Map<String, dynamic> json) {
+    return GeneratedQuestion(
+      question: json['question'],
+      options: json['options'] != null
+          ? List<String>.from(json['options'])
+          : null,
+      correctAnswer: json['correctAnswer'],
+      explanation: json['explanation'],
+    );
+  }
+  
+  Map<String, dynamic> toJson() => {
+    'question': question,
+    'options': options,
+    'correctAnswer': correctAnswer,
+    'explanation': explanation,
+  };
+}
+```
+
+---
+
+## 4.6 Career Development: Bridging Academia and Opportunity
+
+Modern students must balance academic excellence with career preparation. StudyHub's career development suite helps students discover opportunities, build portfolios, and develop professional skills alongside their coursework.
+
+### Opportunity Finder: Discovering Internships, Scholarships, and Competitions
+
+The Opportunity Finder aggregates opportunities from multiple sources, matches them to student profiles, and delivers personalized recommendations.
+
+```dart
+class OpportunityFinderService {
+  final _apiService = ApiService();
+  
+  /// Search for opportunities based on student profile
+  Future<List<Opportunity>> findOpportunities({
+    required StudentProfile profile,
+    List<OpportunityType>? types,
+    String? location,
+  }) async {
+    final opportunities = <Opportunity>[];
+    
+    // Search internships
+    if (types == null || types.contains(OpportunityType.internship)) {
+      final internships = await _searchInternships(
+        skills: profile.skills,
+        interests: profile.interests,
+        location: location ?? profile.location,
+      );
+      opportunities.addAll(internships);
+    }
+    
+    // Search scholarships
+    if (types == null || types.contains(OpportunityType.scholarship)) {
+      final scholarships = await _searchScholarships(
+        academicLevel: profile.academicLevel,
+        field: profile.field,
+        gpa: profile.gpa,
+      );
+      opportunities.addAll(scholarships);
+    }
+    
+    // Search competitions
+    if (types == null || types.contains(OpportunityType.competition)) {
+      final competitions = await _searchCompetitions(
+        skills: profile.skills,
+        interests: profile.interests,
+      );
+      opportunities.addAll(competitions);
+    }
+    
+    // Search hackathons
+    if (types == null || types.contains(OpportunityType.hackathon)) {
+      final hackathons = await _searchHackathons(
+        skills: profile.skills,
+        location: location ?? profile.location,
+      );
+      opportunities.addAll(hackathons);
+    }
+    
+    // Rank by relevance
+    final rankedOpportunities = _rankByRelevance(opportunities, profile);
+    
+    return rankedOpportunities;
+  }
+  
+  /// Search internships from multiple sources
+  Future<List<Opportunity>> _searchInternships({
+    required List<String> skills,
+    required List<String> interests,
+    required String location,
+  }) async {
+    final internships = <Opportunity>[];
+    
+    // Search query combining skills and interests
+    final query = [...skills, ...interests].join(' OR ');
+    
+    try {
+      // Use custom search API (Google Custom Search)
+      final results = await _apiService.search(
+        '$query internship $location',
+        'internship_search_engine_id',
+      );
+      
+      for (final result in results) {
+        internships.add(Opportunity(
+          id: result['link'],
+          title: result['title'],
+          organization: _extractOrganization(result),
+          type: OpportunityType.internship,
+          description: result['snippet'],
+          url: result['link'],
+          location: location,
+          postedDate: DateTime.now(),
+          deadline: _extractDeadline(result),
+          tags: skills,
+        ));
+      }
+    } catch (e) {
+      print('Error searching internships: $e');
+    }
+    
+    return internships;
+  }
+  
+  /// Search scholarships
+  Future<List<Opportunity>> _searchScholarships({
+    required String academicLevel,
+    required String field,
+    double? gpa,
+  }) async {
+    final scholarships = <Opportunity>[];
+    
+    final query = '$field scholarship $academicLevel';
+    
+    try {
+      final results = await _apiService.search(
+        query,
+        'scholarship_search_engine_id',
+      );
+      
+      for (final result in results) {
+        final scholarship = Opportunity(
+          id: result['link'],
+          title: result['title'],
+          organization: _extractOrganization(result),
+          type: OpportunityType.scholarship,
+          description: result['snippet'],
+          url: result['link'],
+          postedDate: DateTime.now(),
+          deadline: _extractDeadline(result),
+          amount: _extractAmount(result),
+          tags: [field, academicLevel],
+        );
+        
+        scholarships.add(scholarship);
+      }
+    } catch (e) {
+      print('Error searching scholarships: $e');
+    }
+    
+    return scholarships;
+  }
+  
+  /// Rank opportunities by relevance to student profile
+  List<Opportunity> _rankByRelevance(
+    List<Opportunity> opportunities,
+    StudentProfile profile,
+  ) {
+    // Calculate relevance score for each opportunity
+    final scored = opportunities.map((opp) {
+      double score = 0.0;
+      
+      // Skill match
+      final skillMatch = opp.tags
+          .where((tag) => profile.skills.contains(tag))
+          .length;
+      score += skillMatch * 3.0;
+      
+      // Interest match
+      final interestMatch = opp.tags
+          .where((tag) => profile.interests.contains(tag))
+          .length;
+      score += interestMatch * 2.0;
+      
+      // Location preference (if same as profile location)
+      if (opp.location == profile.location) {
+        score += 5.0;
+      }
+      
+      // Recency bonus (newer opportunities ranked higher)
+      final daysSincePosted = DateTime.now().difference(opp.postedDate).inDays;
+      score += (30 - daysSincePosted).clamp(0, 30) * 0.1;
+      
+      return MapEntry(opp, score);
+    }).toList();
+    
+    // Sort by score descending
+    scored.sort((a, b) => b.value.compareTo(a.value));
+    
+    return scored.map((e) => e.key).toList();
+  }
+  
+  String _extractOrganization(Map<String, dynamic> result) {
+    // Extract organization name from URL or title
+    final url = result['link'] as String;
+    final domain = Uri.parse(url).host;
+    return domain.replaceAll('www.', '').split('.').first;
+  }
+  
+  DateTime? _extractDeadline(Map<String, dynamic> result) {
+    // Attempt to extract deadline from snippet
+    final snippet = result['snippet'] as String;
+    final deadlineMatch = RegExp(
+      r'deadline[:\s]+(\w+\s+\d{1,2},?\s+\d{4})',
+      caseSensitive: false,
+    ).firstMatch(snippet);
+    
+    if (deadlineMatch != null) {
+      try {
+        return DateFormat('MMMM d, yyyy').parse(deadlineMatch.group(1)!);
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    return null;
+  }
+  
+  String? _extractAmount(Map<String, dynamic> result) {
+    final snippet = result['snippet'] as String;
+    final amountMatch = RegExp(
+      r'\$[\d,]+',
+    ).firstMatch(snippet);
+    
+    return amountMatch?.group(0);
+  }
+}
+
+enum OpportunityType {
+  internship,
+  scholarship,
+  competition,
+  hackathon,
+  workshop,
+  conference,
+}
+
+class Opportunity {
+  final String id;
+  final String title;
+  final String organization;
+  final OpportunityType type;
+  final String description;
+  final String url;
+  final String? location;
+  final DateTime postedDate;
+  final DateTime? deadline;
+  final String? amount;
+  final List<String> tags;
+  bool isSaved;
+  
+  Opportunity({
+    required this.id,
+    required this.title,
+    required this.organization,
+    required this.type,
+    required this.description,
+    required this.url,
+    this.location,
+    required this.postedDate,
+    this.deadline,
+    this.amount,
+    required this.tags,
+    this.isSaved = false,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'organization': organization,
+    'type': type.name,
+    'description': description,
+    'url': url,
+    'location': location,
+    'postedDate': postedDate.toIso8601String(),
+    'deadline': deadline?.toIso8601String(),
+    'amount': amount,
+    'tags': tags,
+    'isSaved': isSaved,
+  };
+  
+  factory Opportunity.fromJson(Map<String, dynamic> json) => Opportunity(
+    id: json['id'],
+    title: json['title'],
+    organization: json['organization'],
+    type: OpportunityType.values.firstWhere(
+      (t) => t.name == json['type'],
+    ),
+    description: json['description'],
+    url: json['url'],
+    location: json['location'],
+    postedDate: DateTime.parse(json['postedDate']),
+    deadline: json['deadline'] != null
+        ? DateTime.parse(json['deadline'])
+        : null,
+    amount: json['amount'],
+    tags: List<String>.from(json['tags']),
+    isSaved: json['isSaved'] ?? false,
+  );
+}
+
+class StudentProfile {
+  final String name;
+  final String academicLevel;
+  final String field;
+  final List<String> skills;
+  final List<String> interests;
+  final String location;
+  final double? gpa;
+  
+  const StudentProfile({
+    required this.name,
+    required this.academicLevel,
+    required this.field,
+    required this.skills,
+    required this.interests,
+    required this.location,
+    this.gpa,
+  });
+}
+```
+
+### Portfolio Builder: Showcasing Academic Achievements
+
+Students need to present their work professionally. The Portfolio Builder helps create polished, shareable portfolios:
+
+```dart
+class PortfolioBuilder {
+  /// Generate portfolio from student data
+  Future<Portfolio> buildPortfolio({
+    required StudentProfile profile,
+    required List<Project> projects,
+    required List<Achievement> achievements,
+    required List<Skill> skills,
+  }) async {
+    return Portfolio(
+      id: _generateId(),
+      profile: profile,
+      projects: projects,
+      achievements: achievements,
+      skills: skills,
+      createdAt: DateTime.now(),
+      lastUpdated: DateTime.now(),
+    );
+  }
+  
+  /// Export portfolio as PDF
+  Future<File> exportAsPDF(Portfolio portfolio) async {
+    final pdf = pw.Document();
+    
+    // Add cover page
+    pdf.addPage(pw.Page(
+      build: (context) => _buildCoverPage(portfolio),
+    ));
+    
+    // Add profile section
+    pdf.addPage(pw.Page(
+      build: (context) => _buildProfileSection(portfolio),
+    ));
+    
+    // Add projects section
+    for (final project in portfolio.projects) {
+      pdf.addPage(pw.Page(
+        build: (context) => _buildProjectPage(project),
+      ));
+    }
+    
+    // Save to file
+    final output = await getTemporaryDirectory();
+    final file = File('${output.path}/portfolio_${portfolio.id}.pdf');
+    await file.writeAsBytes(await pdf.save());
+    
+    return file;
+  }
+  
+  /// Generate shareable portfolio link
+  Future<String> generateShareableLink(Portfolio portfolio) async {
+    // Upload portfolio data to cloud storage
+    final portfolioJson = json.encode(portfolio.toJson());
+    final storageRef = FirebaseStorage.instance
+        .ref()
+        .child('portfolios/${portfolio.id}.json');
+    
+    await storageRef.putString(portfolioJson);
+    
+    // Get download URL
+    final downloadUrl = await storageRef.getDownloadURL();
+    
+    // Generate short link
+    final dynamicLinkParams = DynamicLinkParameters(
+      uriPrefix: 'https://studyhub.page.link',
+      link: Uri.parse('https://studyhub.app/portfolio?id=${portfolio.id}'),
+      androidParameters: AndroidParameters(
+        packageName: 'com.
